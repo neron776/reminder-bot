@@ -43,7 +43,7 @@ async def reading_db(message: types.message, session: AsyncSession):
         if correct_time == '23:59':
             sent.clear()
 
-        print(f"I'm reading the database... {get_time()}")
+        # print(f"I'm reading the database... {get_time()}")
         await asyncio.sleep(15)
 
 
