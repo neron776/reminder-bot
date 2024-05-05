@@ -30,17 +30,11 @@ async def on_startup(bot):
 
 
 async def on_shutdown(bot):
-    print('He fell down')
+    print('The bot has fallen')
 
 
 async def check_start_message(bot: Bot):
-    await bot.send_message(660638311, 'Бот запущен')
-
-#  my id:
-#  660638311
-
-# asya id:
-# 1025799097
+    await bot.send_message(660638311, 'The bot is running')
 
 
 async def main():
