@@ -3,7 +3,7 @@ from datetime import datetime
 from sqlalchemy import select, update, delete, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database.models import Reminder
+from .models import Reminder
 
 
 async def orm_add_reminder(session: AsyncSession, data: dict):
