@@ -6,12 +6,12 @@ class ReadingProcess:
 
 
 def get_time():
-    correct_time = datetime.now()  # + timedelta(hours=+3)
+    correct_time = datetime.now() + timedelta(hours=+3)
     return correct_time.strftime("%H:%M:%S")
 
 
 def get_date():
-    correct_date = datetime.now()  # + timedelta(hours=+3)
+    correct_date = datetime.now() + timedelta(hours=+3)
     return correct_date.strftime("%d.%m.%y")
 
 
