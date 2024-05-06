@@ -9,11 +9,10 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database.orm import orm_add_reminder, orm_get_all_reminders, orm_delete_reminder, orm_update_reminder, \
-    orm_get_reminder, orm_get_todays_reminders
-from app.keyboards import reply
-from app.keyboards.inline import get_callback_buttons
-from app.timing import get_time, get_date, ReadingProcess, get_current_time
+from database import orm
+from keyboards import reply
+from keyboards.inline import get_callback_buttons
+from timing import get_time, get_date, ReadingProcess, get_current_time
 
 user_router = Router()
 user_router.message.filter()
@@ -34,7 +33,7 @@ async def reading_db(message: types.message, session: AsyncSession):
     while True:
         correct_time = get_time()[:-3]
 
-        for reminder in await orm_get_todays_reminders(session, str(message.from_user.id)):
+        for reminder in await orm.orm_get_todays_reminders(session, str(message.from_user.id)):
             if correct_time == f'{reminder.time}':
                 if not sent.get(f'{reminder.name}_{reminder.time}'):
                     await message.answer(text=reminder.text)
@@ -79,7 +78,7 @@ async def help_cmd(message: types.Message):
 async def show_reminders(message: types.Message, session: AsyncSession):
     await message.answer(text='Ваши напоминалки:')
 
-    for reminder in await orm_get_all_reminders(session, str(message.from_user.id)):
+    for reminder in await orm.orm_get_all_reminders(session, str(message.from_user.id)):
         current_date = datetime.now().strftime("%d.%m.%y")
         if reminder.date == current_date:
             date = 'Сегодня'
@@ -101,7 +100,7 @@ async def show_reminders(message: types.Message, session: AsyncSession):
 async def show_todays_reminders(message: types.Message, session: AsyncSession):
     await message.answer(text='Ваши напоминалки на сегодня:')
 
-    for reminder in await orm_get_todays_reminders(session, str(message.from_user.id)):
+    for reminder in await orm.orm_get_todays_reminders(session, str(message.from_user.id)):
         if reminder.date == 'everyday':
             date = 'Ежедневно'
         else:
@@ -120,7 +119,7 @@ async def show_todays_reminders(message: types.Message, session: AsyncSession):
 async def update_reminder(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession):
     reminder_id = callback.data.split("_")[-1]
 
-    reminder_for_update = await orm_get_reminder(session, int(reminder_id))
+    reminder_for_update = await orm.orm_get_reminder(session, int(reminder_id))
     AddReminder.reminder_for_update = reminder_for_update
 
     await callback.answer()
@@ -131,7 +130,7 @@ async def update_reminder(callback: types.CallbackQuery, state: FSMContext, sess
 @user_router.callback_query(F.data.startswith('delete_'))
 async def delete_reminder(callback: types.CallbackQuery, session: AsyncSession):
     reminder_id = callback.data.split("_")[-1]
-    await orm_delete_reminder(session, int(reminder_id))
+    await orm.orm_delete_reminder(session, int(reminder_id))
 
     await callback.answer('Напоминалка удалена', show_alert=True)
     await callback.message.answer('Напоминалка удалена')
@@ -243,7 +242,7 @@ async def confirm_reminder(message: types.Message, state: FSMContext, session: A
 
         try:
             if AddReminder.reminder_for_update:
-                await orm_update_reminder(session, AddReminder.reminder_for_update.id, data)
+                await orm.orm_update_reminder(session, AddReminder.reminder_for_update.id, data)
                 await message.answer(
                     text=f'{data["text"]}\n'
                          f'{data["date"]}, {data["time"]}\n\nизменено',
@@ -251,7 +250,7 @@ async def confirm_reminder(message: types.Message, state: FSMContext, session: A
                 )
                 await state.clear()
             elif not AddReminder.reminder_for_update:
-                await orm_add_reminder(session, data)
+                await orm.orm_add_reminder(session, data)
                 await message.answer(
                     text=f'{data["text"]}\n'
                          f'{data["date"]}, {data["time"]}\n\nНапоминание создано!',
