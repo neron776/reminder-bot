@@ -33,10 +33,6 @@ async def on_shutdown(bot):
     print('The bot has fallen')
 
 
-async def check_start_message(bot: Bot):
-    await bot.send_message(660638311, 'The bot is running')
-
-
 async def main():
     dp.startup.register(on_startup)
     dp.shutdown.register(on_shutdown)
@@ -44,9 +40,6 @@ async def main():
     await create_db()
     # await bot.delete_my_commands(scope=BotCommandScopeAllPrivateChats())
     await bot.set_my_commands(commands=private, scope=BotCommandScopeAllPrivateChats())
-
-    loop = asyncio.get_event_loop()
-    loop.create_task(check_start_message(bot))
 
     await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
 
