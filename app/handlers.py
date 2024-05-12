@@ -5,24 +5,26 @@ from aiogram import F, types, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.filters import Command, CommandStart, StateFilter, or_f
-from datetime import datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import orm
 from keyboards import reply
 from keyboards.inline import get_callback_buttons
-from timing import get_time, get_date, ReadingProcess, get_current_time
+import timing
 
 user_router = Router()
 user_router.message.filter()
+
+
+class ReadingProcess:
+    true_users = {}
 
 
 class AddReminder(StatesGroup):
     text = State()
     date = State()
     time = State()
-
     reminder_for_update = None
 
 
@@ -31,9 +33,9 @@ async def reading_db(message: types.message, session: AsyncSession):
 
     sent = {}
     while True:
-        correct_time = get_time()[:-3]
+        correct_time = timing.get_time()[:-3]
 
-        for reminder in await orm.orm_get_todays_reminders(session, str(message.from_user.id)):
+        for reminder in await orm.get_todays_reminders(session, str(message.from_user.id)):
             if correct_time == f'{reminder.time}':
                 if not sent.get(f'{reminder.name}_{reminder.time}'):
                     await message.answer(text=reminder.text)
@@ -42,7 +44,7 @@ async def reading_db(message: types.message, session: AsyncSession):
         if correct_time == '23:59':
             sent.clear()
 
-        # print(f"I'm reading the database... {get_time()}")
+        # print(f"I'm reading the database... {timing.get_time()} user_id:{message.from_user.id}")
         await asyncio.sleep(15)
 
 
@@ -55,15 +57,20 @@ async def start_cmd(message: types.Message, session: AsyncSession):
                               '- выбрать время напоминания.',
                          reply_markup=reply.start_kb)
 
-    if not ReadingProcess.started:
+    started_user = ReadingProcess.true_users.get(message.from_user.id)
+    if not started_user:
         async with asyncio.TaskGroup() as tg:
             tg.create_task(reading_db(message, session))
-            print('go...')
+            ReadingProcess.true_users.update([(message.from_user.id, True)])
+            print(f'success ({message.from_user.id})')
+            # print(ReadingProcess.true_users)
+    else:
+        print(f'failure ({message.from_user.id})')
 
 
 @user_router.message(Command('show_time'))
 async def show_time_cmd(message: types.Message):
-    current_datetime = get_current_time()
+    current_datetime = timing.get_current_time()
     await message.answer(text=current_datetime)
 
 
@@ -78,8 +85,8 @@ async def help_cmd(message: types.Message):
 async def show_reminders(message: types.Message, session: AsyncSession):
     await message.answer(text='Ваши напоминалки:')
 
-    for reminder in await orm.orm_get_all_reminders(session, str(message.from_user.id)):
-        current_date = datetime.now().strftime("%d.%m.%y")
+    for reminder in await orm.get_all_reminders(session, str(message.from_user.id)):
+        current_date = timing.get_date()
         if reminder.date == current_date:
             date = 'Сегодня'
         elif reminder.date == 'everyday':
@@ -100,7 +107,7 @@ async def show_reminders(message: types.Message, session: AsyncSession):
 async def show_todays_reminders(message: types.Message, session: AsyncSession):
     await message.answer(text='Ваши напоминалки на сегодня:')
 
-    for reminder in await orm.orm_get_todays_reminders(session, str(message.from_user.id)):
+    for reminder in await orm.get_todays_reminders(session, str(message.from_user.id)):
         if reminder.date == 'everyday':
             date = 'Ежедневно'
         else:
@@ -119,7 +126,7 @@ async def show_todays_reminders(message: types.Message, session: AsyncSession):
 async def update_reminder(callback: types.CallbackQuery, state: FSMContext, session: AsyncSession):
     reminder_id = callback.data.split("_")[-1]
 
-    reminder_for_update = await orm.orm_get_reminder(session, int(reminder_id))
+    reminder_for_update = await orm.get_reminder(session, int(reminder_id))
     AddReminder.reminder_for_update = reminder_for_update
 
     await callback.answer()
@@ -130,7 +137,7 @@ async def update_reminder(callback: types.CallbackQuery, state: FSMContext, sess
 @user_router.callback_query(F.data.startswith('delete_'))
 async def delete_reminder(callback: types.CallbackQuery, session: AsyncSession):
     reminder_id = callback.data.split("_")[-1]
-    await orm.orm_delete_reminder(session, int(reminder_id))
+    await orm.delete_reminder(session, int(reminder_id))
 
     await callback.answer('Напоминалка удалена', show_alert=True)
     await callback.message.answer('Напоминалка удалена')
@@ -184,13 +191,8 @@ async def add_reminder_date(message: types.Message, state: FSMContext):
 
 @user_router.message(AddReminder.date, or_f(F.text, F.text == 'Оставить без изменений'))
 async def add_reminder_time(message: types.Message, state: FSMContext):
-    current_date = datetime.now().strftime("%d.%m.%y")
+    current_date = timing.get_date()
     valid = True
-    answers_to_mistakes = [
-        'Неправильный формат даты.\nПопробуйте еще раз',
-        'Неправильный формат даты.\nПопробуйте снова, у вас точно получится!',
-        'Неправильный формат даты.\nПопробуйте снова, (формат ДД.ММ.ГГ)'
-    ]
 
     if message.text == 'Оставить без изменений':
         await state.update_data(date=AddReminder.reminder_for_update.date)
@@ -225,10 +227,29 @@ async def add_reminder_time(message: types.Message, state: FSMContext):
 
 @user_router.message(AddReminder.time, or_f(F.text, F.text == 'Оставить без изменений'))
 async def confirm_reminder(message: types.Message, state: FSMContext, session: AsyncSession):
-    valid = True
     if message.text == 'Оставить без изменений':
-        await state.update_data(time=AddReminder.reminder_for_update.time)
+        try:
+            await state.update_data(time=AddReminder.reminder_for_update.time)
+            data = await state.get_data()
+
+            await orm.update_reminder(session, AddReminder.reminder_for_update.id, data)
+            await message.answer(
+                text=f'{data["text"]}\n'
+                     f'{data["date"]}, {data["time"]}\n\nИзменено',
+                reply_markup=reply.start_kb
+            )
+            await state.clear()
+
+        except Exception as e:
+            await message.answer(
+                text='Ошибка создания/изменения напоминания', reply_markup=reply.start_kb
+            )
+            await state.clear()
+
+        AddReminder.reminder_for_update = None
+
     else:
+        valid = True
         try:
             valid_time = time.strptime(message.text, "%H:%M")
             await state.update_data(time=message.text)
@@ -236,20 +257,11 @@ async def confirm_reminder(message: types.Message, state: FSMContext, session: A
             print('Invalid time!')
             valid = False
 
-    if valid:
-        await state.update_data(time=message.text)
-        data = await state.get_data()
+        if valid:
+            try:
+                await state.update_data(time=message.text)
+                data = await state.get_data()
 
-        try:
-            if AddReminder.reminder_for_update:
-                await orm.orm_update_reminder(session, AddReminder.reminder_for_update.id, data)
-                await message.answer(
-                    text=f'{data["text"]}\n'
-                         f'{data["date"]}, {data["time"]}\n\nизменено',
-                    reply_markup=reply.start_kb
-                )
-                await state.clear()
-            elif not AddReminder.reminder_for_update:
                 await orm.orm_add_reminder(session, data)
                 await message.answer(
                     text=f'{data["text"]}\n'
@@ -258,16 +270,16 @@ async def confirm_reminder(message: types.Message, state: FSMContext, session: A
                 )
                 await state.clear()
 
+            except Exception as e:
+                await message.answer(
+                    text='Ошибка создания/изменения напоминания', reply_markup=reply.start_kb
+                )
+                await state.clear()
+
             AddReminder.reminder_for_update = None
 
-        except Exception as e:
+        else:
             await message.answer(
-                text='Ошибка создания/изменения напоминания', reply_markup=reply.start_kb
+                text='Неправильный формат времени.\nПопробуйте еще раз', reply_markup=reply.set_reminder_time_kb
             )
-            await state.clear()
-
-    else:
-        await message.answer(
-            text='Неправильный формат времени.\nПопробуйте еще раз', reply_markup=reply.set_reminder_time_kb
-        )
-        await state.set_state(AddReminder.time)
+            await state.set_state(AddReminder.time)
